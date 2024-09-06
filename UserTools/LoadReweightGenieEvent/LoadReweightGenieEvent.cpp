@@ -120,11 +120,11 @@ bool LoadReweightGenieEvent::Initialise(std::string configfile, DataModel &data)
 		wcsimfile.erase(wcsimfile.find("."),wcsimfile.length());
 		wcsimev.erase(0,wcsimev.find(".")+1);
 
-		std::cout <<"wcsimfile: "<<wcsimfile<<", wcsimev: "<<wcsimev<<std::endl;
+		if(verbosity > 1) std::cout <<"wcsimfile: "<<wcsimfile<<", wcsimev: "<<wcsimev<<std::endl;
 		std::string::size_type sz;
 		int wcsimfilenumber = std::stoi(wcsimfile,&sz);
 		int wcsimevnumber = std::stoi(wcsimev,&sz);
-		std::cout <<"wcsimfilenumber: "<<wcsimfilenumber<<", wcsimevnumber: "<<wcsimevnumber<<std::endl;
+		if(verbosity > 1) std::cout <<"wcsimfilenumber: "<<wcsimfilenumber<<", wcsimevnumber: "<<wcsimevnumber<<std::endl;
 
 		std::string inputfile = filedir+"/gntp."+wcsimfile+".ghep.root";
 		curf=TFile::Open(inputfile.c_str());
@@ -169,7 +169,7 @@ bool LoadReweightGenieEvent::Initialise(std::string configfile, DataModel &data)
 	for (unsigned int i = 0; i < CV_knob_names.size(); i++ ) {
 		if ( valid_knob_name(CV_knob_names[i], temp_knob) ) {
 			if ( gsyst_to_cv_map.count( temp_knob ) ) {
-				std::cout << "ERROR: Duplicate central values were configured for the " << CV_knob_names[i] << " GENIE knob.";
+				if(verbosity > 1) std::cout << "ERROR: Duplicate central values were configured for the " << CV_knob_names[i] << " GENIE knob.";
 			}
 			gsyst_to_cv_map[ temp_knob ] = CV_knob_value[i];
 		}
@@ -321,7 +321,7 @@ bool LoadReweightGenieEvent::Initialise(std::string configfile, DataModel &data)
 				else {
 					reweightingSigmas[k][u] = xs_configs.parameter_sigma[k];
 				}
-				std::cout << "Set sigma for the " << genie::rew::GSyst::AsString( current_knob ) << " knob in universe #" << u << ". sigma = " << reweightingSigmas[k][u] << std::endl;
+				if(verbosity > 1) std::cout << "Set sigma for the " << genie::rew::GSyst::AsString( current_knob ) << " knob in universe #" << u << ". sigma = " << reweightingSigmas[k][u] << std::endl;
 				// Add an offset if the central value for the current knob has been
 				// configured (and is thus probably nonzero). Ignore this for minmax mode
 				// (the limits should be chosen to respect a modified central value)
@@ -329,7 +329,7 @@ bool LoadReweightGenieEvent::Initialise(std::string configfile, DataModel &data)
 					auto iter = gsyst_to_cv_map.find( current_knob );
 					if ( iter != gsyst_to_cv_map.end() ) {
 						reweightingSigmas[k][u] += iter->second;
-						std::cout << "CV offset added to the " << genie::rew::GSyst::AsString( current_knob ) << " knob. New sigma for universe #" << u << " is " << reweightingSigmas[k][u] << std::endl;
+						if(verbosity > 1) std::cout << "CV offset added to the " << genie::rew::GSyst::AsString( current_knob ) << " knob. New sigma for universe #" << u << " is " << reweightingSigmas[k][u] << std::endl;
 					}
 				}
 			}
@@ -532,7 +532,7 @@ bool LoadReweightGenieEvent::Execute(){
 	
 	// neutrino interaction info
 	genie::Interaction* genieint = gevtRec->Summary();
-	//cout<<"scraping interaction info"<<endl;
+	if(verbosity>1) cout<<"scraping interaction info"<<endl;
 	GenieInfo thegenieinfo;
 	Log("Tool LoadReweightGenieEvent: Filling GenieInfo struct",v_debug,verbosity);
 	GetGenieEntryInfo(gevtRec, genieint, thegenieinfo, (verbosity>v_debug));
@@ -555,6 +555,11 @@ bool LoadReweightGenieEvent::Execute(){
 	neutcode=thegenieinfo.neutinteractioncode; // currently disabled to prevent excessive verbosity
 	
 	eventq2=thegenieinfo.Q2;                  //MeV
+	eventw2=thegenieinfo.W2;                  //MeV
+	eventbj_x = thegenieinfo.x; 
+    eventelastic_y = thegenieinfo.y; 
+	
+	TrueTargetZ = thegenieinfo.targetnucleusZ;
 	eventEnu=thegenieinfo.probeenergy;        //MeV
 	eventPnu=thegenieinfo.probethreemomentum; //MeV
 	neutrinopdg=thegenieinfo.probepdg;
@@ -706,6 +711,21 @@ bool LoadReweightGenieEvent::Execute(){
 	geniestore->Set("NuVtxInTank",isintank);
 	geniestore->Set("NuVtxInFidVol",isinfiducialvol);
 	geniestore->Set("EventQ2",eventq2);
+	geniestore->Set("EventW2",eventw2);
+	geniestore->Set("EventBjx",eventbj_x);
+    geniestore->Set("Eventy",eventelastic_y);
+	geniestore->Set("TargetZ",TrueTargetZ);
+	geniestore->Set("Eventq0",eventq0);
+	geniestore->Set("Eventq3",eventq3);
+	
+	geniestore->Set("pdg_vector", pdgs);
+	geniestore->Set("Pmag_vector",Pmag);
+	
+	
+
+	
+	
+	
 	geniestore->Set("NeutrinoEnergy",eventEnu);
 	geniestore->Set("NeutrinoMomentum",eventPnu);
 	geniestore->Set("NeutrinoPDG",neutrinopdg);
@@ -739,6 +759,8 @@ bool LoadReweightGenieEvent::Execute(){
 	
 	Log("Tool LoadReweightGenieEvent: Clearing genieintx",v_debug,verbosity);
 	genieintx->Clear(); // REQUIRED TO PREVENT MEMORY LEAK
+	pdgs.clear();
+    Pmag.clear();
 	
 	Log("Tool LoadReweightGenieEvent: done",v_debug,verbosity);
 	return true;
@@ -921,48 +943,78 @@ void LoadReweightGenieEvent::GetGenieEntryInfo(genie::EventRecord* gevtRec, geni
         thegenieinfo.numfskminus = 0;
         thegenieinfo.numfskminuscher = 0;
 
+
 	TObjArrayIter iter(gevtRec);
 	genie::GHepParticle * p = 0;
 
 	//Loop over event particles
+	/// Where I got My Threshold Values 
+	/// Kolanoski, Hermann, and Norbert Wermes, Particle Detectors: Fundamentals and Applications
+	// (Oxford, 2020; online edn, Oxford Academic, 17 Sept. 2020), 
+	/// https://doi.org/10.1093/oso/9780198858362.001.0001, accessed 15 Aug. 2024.
+	// Using the equation P_th = Mass[GeV/C] / sqrt(n^2-1),  where "n" is the index for refraction
+	/// rounding to  2 SigFigs 
+	double wclimit_pion  = 0.16; //water Cherenkov momentum threshold GeV 
+	double wclimit_proton  = 1.1; //water Cherenkov momentum threshold GeV 
+	double wclimit_kaon  = .56; //water Cherenkov momentum threshold GeV **THe the charged and neutral kaons thresholds are the same to 2 sigfigs 
+	// 
         while ((p = dynamic_cast<genie::GHepParticle *>(iter.Next()))) {
 
                 int pdgc = p->Pdg();
+                double pipx = p->Px();
+                double pipy = p->Py();
+                double pipz = p->Pz();
+                double P_mag =  std::sqrt(pipx*pipx + pipy*pipy + pipz*pipz);
                 int status = p->Status();
-                double wclimit = 0.160; //water Cherenkov momentum threshold GeV
+                
+                
+                
+                double wclimit = 0.160; //water Cherenkov momentum threshold GeV fpr pions 
 
                 if (status != genie::kIStStableFinalState) continue;
-
+                
+                // I think this should be filled after this condition to get FS particles
+           
                 if (pdgc == genie::kPdgNeutron) thegenieinfo.numfsneutrons++;
-                else if (pdgc == genie::kPdgProton) thegenieinfo.numfsprotons++;
+                else if (pdgc == genie::kPdgProton){ 
+                        thegenieinfo.numfsprotons++;
+                        if (P_mag > wclimit_proton){    
+                        pdgs.push_back(pdgc); 
+                        Pmag.push_back(P_mag);
+                        }
+                    }
                 else if (pdgc == genie::kPdgPiP) {
                         thegenieinfo.numfspiplus++;
-                        double pipx = p->Px();
-                        double pipy = p->Py();
-                        double pipz = p->Pz();
-                        if (std::sqrt(pipx*pipx + pipy*pipy + pipz*pipz) > wclimit) thegenieinfo.numfspipluscher++;
-                }
+                        if (P_mag > wclimit_pion){    
+                        pdgs.push_back(pdgc); 
+                        Pmag.push_back(P_mag);
+                        thegenieinfo.numfspipluscher++;
+                        }
+                    }
                 else if (pdgc == genie::kPdgPiM) {
                         thegenieinfo.numfspiminus++;
-                        double pipx = p->Px();
-                        double pipy = p->Py();
-                        double pipz = p->Pz();
-                        if (std::sqrt(pipx*pipx + pipy*pipy + pipz*pipz) > wclimit) thegenieinfo.numfspiminuscher++;
-                }
+                        if (P_mag > wclimit_pion) {    
+                        pdgs.push_back(pdgc); 
+                        Pmag.push_back(P_mag);
+                        thegenieinfo.numfspiminuscher++;
+                        }
+                    }
                 else if (pdgc == genie::kPdgPi0) thegenieinfo.numfspi0++;
                 else if (pdgc == genie::kPdgKP) {
                         thegenieinfo.numfskplus++;
-                        double pipx = p->Px();
-                        double pipy = p->Py();
-                        double pipz = p->Pz();
-                        if (std::sqrt(pipx*pipx + pipy*pipy + pipz*pipz) > wclimit) thegenieinfo.numfskpluscher++;
+                        if (P_mag > wclimit_kaon) {    
+                        pdgs.push_back(pdgc); 
+                        Pmag.push_back(P_mag);
+                        thegenieinfo.numfskpluscher++;
+						}
                 }
                 else if (pdgc == genie::kPdgKM) {
                         thegenieinfo.numfskminus++;
-                        double pipx = p->Px();
-                        double pipy = p->Py();
-                        double pipz = p->Pz();
-                        if (std::sqrt(pipx*pipx + pipy*pipy + pipz*pipz) > wclimit) thegenieinfo.numfskminuscher++;
+                        if (P_mag > wclimit_kaon){    
+                        pdgs.push_back(pdgc); 
+                        Pmag.push_back(P_mag);
+                        thegenieinfo.numfskminuscher++;
+                        }
                 }
         }
 	
@@ -983,8 +1035,18 @@ void LoadReweightGenieEvent::GetGenieEntryInfo(genie::EventRecord* gevtRec, geni
 	// q=k1-k2, 4-p transfer
 	/*TLorentzVector*/ thegenieinfo.q = TLorentzVectorToFourVectorRW((*k1)-(*k2));
 //	/*Double_t*/ thegenieinfo.Q2 = genieint->Kine().Q2();  // not set in our GENIE files!
+	double q0 =  (gevtRec->Probe()->P4()->E()*1000.) - (gevtRec->FinalStatePrimaryLepton()->P4()->E()*1000.);
+	double px1 = (gevtRec->FinalStatePrimaryLepton()->P4()->Px()*1000.) - (gevtRec->Probe()->P4()->Px()*1000.);
+    double py1 = (gevtRec->FinalStatePrimaryLepton()->P4()->Py()*1000.) - (gevtRec->Probe()->P4()->Py()*1000.);
+    double pz1 = (gevtRec->FinalStatePrimaryLepton()->P4()->Pz()*1000.) - (gevtRec->Probe()->P4()->Pz()*1000.);
+    double q3 = sqrt(px1*px1+py1*py1+pz1*pz1);
+	thegenieinfo.Q2 = q3*q3 - q0*q0;  // MeV
+
+	eventq0 = q0;
+    eventq3 = q3; 
+
 	// momemtum transfer
-	/*Double_t*/ thegenieinfo.Q2 = -1 * thegenieinfo.q.M2();
+	///*Double_t*/ thegenieinfo.Q2 = -1 * thegenieinfo.q.M2();
 	// E transfer to the nucleus
 	/*Double_t*/ thegenieinfo.Etransf = (targetnucleon) ? thegenieinfo.q.E() : -1;
 	// Bjorken x
@@ -997,7 +1059,7 @@ void LoadReweightGenieEvent::GetGenieEntryInfo(genie::EventRecord* gevtRec, geni
 	/*Double_t*/ thegenieinfo.W2 = 
 	(targetnucleon) ? (NucleonM*NucleonM + 2*NucleonM*thegenieinfo.Etransf - thegenieinfo.Q2) : -1;
 	
-	if(printneutrinoevent){
+	if(printneutrinoevent && verbosity > 1 ){
 		cout<<"This was a "<< thegenieinfo.procinfostring <<" (neut code "<<thegenieinfo.neutinteractioncode
 			<<") interaction of a "
 			<<thegenieinfo.probeenergy<<"MeV " << thegenieinfo.probepartname << " on a "; 
@@ -1430,7 +1492,7 @@ std::map< std::string, int > LoadReweightGenieEvent::CheckForIncompatibleSystema
 					if ( search != modes_to_use.end() ) {
 						if ( search->second != mode ) {
 							auto knob_str = genie::rew::GSyst::AsString( knob );
-							std::cout << "ERROR: The GENIE knob " << knob_str << " is incompatible with others that are already configured" << std::endl;
+							if(verbosity > 1)  std::cout << "ERROR: The GENIE knob " << knob_str << " is incompatible with others that are already configured" << std::endl;
 						}
 					}
 					else modes_to_use[ calc_name ] = mode;
